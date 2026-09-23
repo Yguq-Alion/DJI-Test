@@ -8,11 +8,23 @@ interface DeltaProps {
   kind?: ChangeKind
   /** Для метрик, где рост — плохо (доля возвратов). */
   invert?: boolean
+  /** В таблицах вместо фразы показывается «—» с подсказкой. */
+  compact?: boolean
   className?: string
 }
 
 /** Изменение к прошлому периоду: знак, стрелка и цвет — смысл не передаётся одним цветом. */
-export function Delta({ change, kind = 'percent', invert = false, className }: DeltaProps) {
+export function Delta({ change, kind = 'percent', invert = false, compact = false, className }: DeltaProps) {
+  if (change === null && compact) {
+    return (
+      <span
+        className={cn('text-xs text-muted-foreground', className)}
+        title="В прошлом периоде не было данных для сравнения"
+      >
+        —
+      </span>
+    )
+  }
   if (change === null) {
     return <span className={cn('text-xs text-muted-foreground', className)}>нет данных для сравнения</span>
   }

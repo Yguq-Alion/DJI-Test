@@ -169,7 +169,7 @@ backend/
 |---|---|---|
 | 6.1 | **Vite + React + TypeScript** (strict). | 🔧 |
 | 6.2 | **shadcn/ui + Tailwind v4**, светлая + тёмная тема. | ✅ |
-| 6.3 | Графики — **Nivo**. Комбинированный график Revenue/GP (bars) + salesCount (line) — через custom layer. Тема Nivo берёт цвета из CSS-переменных shadcn. | ✅ |
+| 6.3 | Графики — **Nivo**. Тема Nivo берёт цвета из CSS-переменных темы. ⚠️ Уточнено при реализации: вместо комбинированного графика с двумя осями Y — Revenue и GP линиями на одной денежной оси, количество продаж — отдельным столбчатым графиком под ним с той же осью X (две шкалы на одном графике вводят в заблуждение). Палитра проверена валидатором CVD/контраста для светлой и тёмной темы. | ✅ |
 | 6.4 | **TanStack Query** (`placeholderData: keepPreviousData`, чтобы не мигать при смене периода) + **фильтры в URL через nuqs** (period, sortBy, granularity). Zustand/Redux не нужны. | ✅ |
 | 6.5 | **Motion**: stagger появления KPI, animated counters, layout-анимация перестановки рейтинга, transitions таблицы; `prefers-reduced-motion`. | ✅ |
 | 6.6 | Каждый блок сам отвечает за loading (skeleton) / error (retry) / empty (объяснение). Ошибка одного блока не ломает остальные. | 🔧 |

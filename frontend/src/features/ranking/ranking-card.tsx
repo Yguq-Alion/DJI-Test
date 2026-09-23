@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import { motion } from 'motion/react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
 import { useRanking } from '@/api/queries'
 import type { RankingItem, RankingSort } from '@/api/types'
@@ -62,7 +63,7 @@ export function RankingCard({ className }: { className?: string }) {
                 <SortableHead active={sortBy === 'grossProfit'}>Валовая прибыль</SortableHead>
                 <SortableHead active={sortBy === 'averageCheck'}>Средний чек</SortableHead>
                 <TableHead className="text-right">Маржа</TableHead>
-                <TableHead className="text-right">Изменение</TableHead>
+                <TableHead className="w-24 text-right">Изменение</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -88,10 +89,19 @@ function SortableHead({ active, children }: { active: boolean; children: string 
   )
 }
 
+const MotionRow = motion.create(TableRow)
+
 function RankingRow({ item, sortBy }: { item: RankingItem; sortBy: RankingSort }) {
   const inactive = item.rank === null
   return (
-    <TableRow className={cn(inactive && 'text-muted-foreground')}>
+    // layout: при смене режима или периода строки плавно переезжают на новые места.
+    <MotionRow
+      layout="position"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ layout: { type: 'spring', stiffness: 380, damping: 34 }, opacity: { duration: 0.2 } }}
+      className={cn(inactive && 'text-muted-foreground')}
+    >
       <TableCell className="tabular">
         <div className="flex items-center gap-1">
           <span
@@ -132,8 +142,8 @@ function RankingRow({ item, sortBy }: { item: RankingItem; sortBy: RankingSort }
         {formatMoneyCompact(item.averageCheck)}
       </TableCell>
       <TableCell className="text-right tabular">{formatShare(item.margin)}</TableCell>
-      <TableCell className="text-right">{inactive ? '' : <Delta change={item.change} />}</TableCell>
-    </TableRow>
+      <TableCell className="text-right">{inactive ? '' : <Delta change={item.change} compact />}</TableCell>
+    </MotionRow>
   )
 }
 

@@ -13,6 +13,10 @@ export default defineConfig({
     // В dev-режиме /api проксируется на локальный backend (в docker это делает nginx).
     proxy: { '/api': 'http://localhost:5157' },
   },
+  build: {
+    // Основной чанк ~215 КБ gzip (React, Radix, Motion, date-fns); Nivo вынесен в ленивый чанк.
+    chunkSizeWarningLimit: 800,
+  },
   test: {
     environment: 'jsdom',
     globals: true,

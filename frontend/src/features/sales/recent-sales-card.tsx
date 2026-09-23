@@ -122,7 +122,7 @@ function SaleRow({ sale }: { sale: RecentSale }) {
   const [first, ...rest] = sale.items
   const muted = sale.status === 'cancelled'
   return (
-    <TableRow className={cn(muted && 'text-muted-foreground')}>
+    <TableRow className={cn('animate-in fade-in duration-300', muted && 'text-muted-foreground')}>
       <TableCell className="tabular">{formatDateTime(sale.soldAt)}</TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
