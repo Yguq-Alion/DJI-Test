@@ -19,8 +19,17 @@
 
 ## Команды
 
-Заполняются по мере появления проекта.
-
 ```bash
-docker compose up --build          # весь стек → http://localhost:8080
+docker compose up --build                  # весь стек → http://localhost:8080
+
+# backend (из backend/)
+dotnet build                               # сборка
+dotnet test                                # юнит + интеграционные (Testcontainers, нужен Docker)
+dotnet ef migrations add <Name> -p SalesDashboard.Api -o Data/Migrations
+
+# frontend (из frontend/)
+npm run dev                                # Vite dev-сервер, /api → http://localhost:5157
+npm run typecheck && npm run lint && npm run format:check
+npm test                                   # Vitest + RTL + MSW
+npm run test:e2e                           # Playwright против поднятого compose (http://localhost:8080)
 ```
