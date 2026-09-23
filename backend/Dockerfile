@@ -6,8 +6,8 @@ COPY SalesDashboard.Api/ SalesDashboard.Api/
 RUN dotnet publish SalesDashboard.Api/SalesDashboard.Api.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
-# tzdata нужна для IANA-часовых поясов (периоды считаются в поясе браузера).
-RUN apk add --no-cache tzdata
+# tzdata — IANA-часовые пояса (периоды считаются в поясе браузера); krb5-libs — чтобы Npgsql не ругался на отсутствие GSSAPI.
+RUN apk add --no-cache tzdata krb5-libs
 WORKDIR /app
 COPY --from=build /app .
 EXPOSE 8080
