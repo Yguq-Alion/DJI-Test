@@ -22,7 +22,8 @@ export function buildQuery(params: Params): string {
 export async function apiGet<T>(path: string, params: Params, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/api/${path}?${buildQuery(params)}`, {
+    const url = new URL(`/api/${path}?${buildQuery(params)}`, window.location.origin)
+    response = await fetch(url, {
       signal,
       headers: { Accept: 'application/json' },
     })
