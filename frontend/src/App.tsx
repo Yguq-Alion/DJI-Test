@@ -21,16 +21,11 @@ export default function App() {
     <div className="min-h-screen bg-muted/40 text-foreground">
       <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-6 px-8 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-              DM
-            </div>
-            <div>
-              <h1 className="font-heading text-lg leading-tight font-semibold tracking-tight">
-                Sales Performance
-              </h1>
-              <p className="text-xs text-muted-foreground">Аналитика продаж менеджеров · DJI-Market</p>
-            </div>
+          <div>
+            <h1 className="font-heading text-lg leading-tight font-semibold tracking-tight">
+              Sales Performance
+            </h1>
+            <p className="text-xs text-muted-foreground">Аналитика продаж менеджеров · DJI-Market</p>
           </div>
           <div className="flex items-center gap-3">
             <PeriodPicker />
