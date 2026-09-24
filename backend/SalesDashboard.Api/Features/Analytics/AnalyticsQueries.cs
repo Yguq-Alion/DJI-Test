@@ -19,6 +19,8 @@ public sealed class TimeseriesRow
     public decimal Revenue { get; init; }
     public decimal GrossProfit { get; init; }
     public int SalesCount { get; init; }
+    public int RefundsCount { get; init; }
+    public decimal RefundedAmount { get; init; }
 }
 
 public sealed class ProductLedgerRow
@@ -125,14 +127,17 @@ public sealed class AnalyticsQueries(AppDbContext db)
             refunded as (
                 select bucket,
                        sum(amount) as amount,
-                       sum(amount - restocked_cost + extra) as gross_profit_loss
+                       sum(amount - restocked_cost + extra) as gross_profit_loss,
+                       count(*)::int as refunds_count
                 from refund_totals
                 group by bucket
             )
             select b.bucket as bucket_start,
                    coalesce(sold.revenue, 0) - coalesce(refunded.amount, 0) as revenue,
                    coalesce(sold.gross_profit, 0) - coalesce(refunded.gross_profit_loss, 0) as gross_profit,
-                   coalesce(sold.sales_count, 0) as sales_count
+                   coalesce(sold.sales_count, 0) as sales_count,
+                   coalesce(refunded.refunds_count, 0) as refunds_count,
+                   coalesce(refunded.amount, 0) as refunded_amount
             from generate_series(
                      date_trunc({unit}, {startLocal}::timestamp),
                      {endLocal}::timestamp - interval '1 microsecond',

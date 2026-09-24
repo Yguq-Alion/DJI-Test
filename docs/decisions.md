@@ -93,7 +93,7 @@ CHECK-ограничения: `Quantity > 0`, `UnitPrice ≥ 0`, `UnitCost ≥ 0
 
 | Индекс | Зачем |
 |---|---|
-| `sales (sold_at, id)` | диапазон по периоду + keyset-пагинация последних продаж (оба направления) |
+| `sales (sold_at, id)` | диапазон по периоду + сортировка последних продаж по дате (по умолчанию) |
 | `sales (manager_id, sold_at)` | рейтинг / фильтр по менеджеру |
 | `refunds (refunded_at)` | сторно-агрегаты по дате возврата |
 | `refunds (sale_id) UNIQUE` | 1:1 |
@@ -107,6 +107,7 @@ CHECK-ограничения: `Quantity > 0`, `UnitPrice ≥ 0`, `UnitCost ≥ 0
 | # | Решение | Статус |
 |---|---|---|
 | 3.1 | Генератор на **C# с фиксированным `new Random(seed)`**: профили менеджеров (сильный / слабый / высокий чек / низкая маржа / отпуск-пробел), сезонность по месяцам и дням недели, ~85% Paid / ~8% Cancelled / ~7% Refunded, у части возвратов `ItemsRestocked = false` и 0–3 `RefundCost`. Несколько крупных сделок-выбросов. | ✅ |
+| 3.1a | **Градации возвратов** (возврат по-прежнему полный): быстрый отказ (2–72 ч, товар на склад, расходы минимальны или нет), стандартный (4–30 дн.), гарантийный (31–90 дн., обязательная экспертиза, часто товар списан), повреждение при доставке (товар потерян, дорогая логистика), спорный (все виды расходов). Отдельно — полный возврат крупной сделки-выброса. Покрыто тестом генератора. | ✅ 2026-09-24 |
 | 3.2 | **Даты относительно «сегодня»** (12 месяцев назад → сегодня), чтобы пресеты «Сегодня / 7 дней» не были пустыми. Воспроизводимость: одинаковый seed → одинаковые данные при одной и той же дате запуска. | 🔧 |
 | 3.3 | Миграции (`Database.MigrateAsync()`) и seed — **на старте backend**, seed только если таблицы пустые; управляется флагом конфигурации. В README: в production так не делаем. | ✅ |
 | 3.4 | Вставка пачками (`AddRange` + один `SaveChanges`, либо Npgsql binary COPY, если медленно). | 🔧 |
@@ -148,18 +149,18 @@ backend/
 | Эндпоинт | Ответ |
 |---|---|
 | `GET /api/dashboard/kpi` | revenue, grossRevenue, grossProfit, margin, salesCount, averageCheck, refundRate, refundedAmount — каждый `{value, previous, deltaPct}`; `bestManager {id, name, grossProfit, revenue, refundRate}` |
-| `GET /api/dashboard/timeseries?granularity=auto\|hour\|day\|week\|month` | `granularity` (итоговая), `points[] {bucketStart, revenue, grossProfit, salesCount}` — пустые бакеты = 0 |
+| `GET /api/dashboard/timeseries?granularity=auto\|hour\|day\|week\|month` | `granularity` (итоговая), `points[] {bucketStart, revenue, grossProfit, salesCount, refundsCount, refundedAmount}` — пустые бакеты = 0; возвраты — по дате возврата (для отметок на графике) |
 | `GET /api/managers/ranking?sortBy=grossProfit\|averageCheck` | `items[] {rank, manager, salesCount, revenue, grossProfit, averageCheck, margin, refundRate, deltaPct}` — менеджеры без продаж в конце с нулями |
 | `GET /api/dashboard/categories` | `items[] {category, revenue, grossProfit, margin, share}` |
 | `GET /api/dashboard/products/top?limit=10` | `items[] {product, category, qty, revenue, grossProfit}` |
-| `GET /api/sales/recent?limit=20&cursor=&status=&managerId=` | keyset по `(soldAt desc, id desc)`: `items[] {id, soldAt, manager, customer, items[], status, amount, grossProfit, refund?}`, `nextCursor` |
+| `GET /api/sales/recent?limit=20&page=1&sortBy=soldAt\|manager\|customer\|items\|status\|amount\|grossProfit&sortDir=asc\|desc&status=&managerId=` | `items[] {id, soldAt, manager, customer, items[], status, amount, grossProfit, refund?}`, `page`, `pageSize`, `totalCount`, `totalPages`; по умолчанию `soldAt desc` |
 | `GET /health` | healthcheck для compose |
 
 | # | Решение | Статус |
 |---|---|---|
 | 5.1 | **Пресет → даты считает бэк** (`PeriodResolver`), в ответе — resolved-периоды. | ✅ |
 | 5.2 | Гранулярность: **auto + ручное переопределение**. Auto: ≤ 1 дня → час, ≤ 62 дней → день, ≤ 26 недель → неделя, иначе месяц. | ✅ |
-| 5.3 | Последние продажи: **keyset-пагинация + фильтры** статус/менеджер, «Загрузить ещё». | ✅ |
+| 5.3 | Последние продажи: ~~keyset-пагинация~~ → **OFFSET-пагинация + сортировка по любой колонке на сервере** + фильтры статус/менеджер, «Загрузить ещё» и счётчик «Страница N из M». ⚠️ Изменено 2026-09-24 по запросу: keyset не даёт общего числа страниц и не работает с сортировкой по вычисляемым полям (сумма, прибыль). В периоде ≤ нескольких тысяч продаж OFFSET дёшев; стабильность порядка — tie-break `(sold_at, id)` в направлении сортировки. | ✅ |
 
 ---
 
@@ -174,6 +175,8 @@ backend/
 | 6.5 | **Motion**: stagger появления KPI, animated counters, layout-анимация перестановки рейтинга, transitions таблицы; `prefers-reduced-motion`. | ✅ |
 | 6.6 | Каждый блок сам отвечает за loading (skeleton) / error (retry) / empty (объяснение). Ошибка одного блока не ломает остальные. | 🔧 |
 | 6.7 | Типы API — вручную в `src/api/types.ts` (или генерация из OpenAPI, если останется время). | 🔧 |
+| 6.8 | **Сортировка таблиц по клику на заголовок** (повтор — смена направления, стрелка у активной колонки, `aria-sort`). Последние продажи — сортирует сервер (данные постраничные). Рейтинг — пересортировка на клиенте уже посчитанных сервером строк (десятки строк, агрегации нет — правило «фронт не агрегирует» не нарушается); место (`rank`) по-прежнему считает сервер по выбранной метрике. | ✅ 2026-09-24 |
+| 6.9 | Пояснения к метрикам и блокам — **подсказки по наведению** (заголовок блока, значение KPI) вместо подзаголовков и футера. Период выбирается над KPI; календарь подсвечивает даты текущего периода и предпросмотр диапазона. Возвраты — красные отметки на линии прибыли (размер ~ сумме). | ✅ 2026-09-24 |
 
 ---
 

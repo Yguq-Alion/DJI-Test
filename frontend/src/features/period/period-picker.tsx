@@ -2,6 +2,7 @@ import { ru } from 'date-fns/locale'
 import { CalendarRange } from 'lucide-react'
 import { useState } from 'react'
 import type { DateRange } from 'react-day-picker'
+import { useKpi } from '@/api/queries'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -9,19 +10,27 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatDateRange, parseIsoDate, toIsoDate } from '@/lib/format'
 import { PRESETS, type Preset, usePeriod } from './period-state'
 
+/** Диапазон «от первой выбранной даты до даты под курсором» — подсветка ещё не завершённого выбора. */
+export function previewRange(draft: DateRange | undefined, hovered: Date | undefined): DateRange | undefined {
+  if (!draft?.from || draft.to || !hovered) return undefined
+  return hovered < draft.from ? { from: hovered, to: draft.from } : { from: draft.from, to: hovered }
+}
+
 export function PeriodPicker() {
   const { params, isCustom, setPreset, setRange } = usePeriod()
+  // Даты пресета считает сервер — берём их из уже загруженных KPI (тот же запрос, из кэша).
+  const resolved = useKpi(params).data?.period
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<DateRange | undefined>()
+  const [hovered, setHovered] = useState<Date | undefined>()
+  const preview = previewRange(draft, hovered)
 
   const openCalendar = (next: boolean) => {
     setOpen(next)
+    setHovered(undefined)
     if (next) {
-      setDraft(
-        isCustom && params.from && params.to
-          ? { from: parseIsoDate(params.from), to: parseIsoDate(params.to) }
-          : undefined,
-      )
+      // Календарь открывается с подсвеченными датами текущего периода — и для пресета, и для произвольного.
+      setDraft(resolved ? { from: parseIsoDate(resolved.from), to: parseIsoDate(resolved.to) } : undefined)
     }
   }
 
@@ -33,7 +42,7 @@ export function PeriodPicker() {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
       <ToggleGroup
         type="single"
         variant="outline"
@@ -56,14 +65,26 @@ export function PeriodPicker() {
             {isCustom && params.from && params.to ? formatDateRange(params.from, params.to) : 'Период…'}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-auto p-3">
+        <PopoverContent align="start" className="w-auto p-3">
           <Calendar
             mode="range"
             locale={ru}
             numberOfMonths={2}
             selected={draft}
-            onSelect={setDraft}
-            defaultMonth={draft?.from ?? new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)}
+            onSelect={(range, day) => {
+              // Если диапазон уже выбран целиком, клик начинает новый выбор, а не растягивает старый.
+              setDraft(draft?.from && draft.to ? { from: day, to: undefined } : range)
+              setHovered(undefined)
+            }}
+            onDayMouseEnter={(day) => setHovered(day)}
+            onDayMouseLeave={() => setHovered(undefined)}
+            modifiers={preview ? { preview } : undefined}
+            modifiersClassNames={{ preview: 'bg-primary/10' }}
+            defaultMonth={
+              draft?.to
+                ? new Date(draft.to.getFullYear(), draft.to.getMonth() - 1, 1)
+                : new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
+            }
             disabled={{ after: new Date() }}
           />
           <div className="flex items-center justify-between gap-3 border-t pt-3">
@@ -78,6 +99,12 @@ export function PeriodPicker() {
           </div>
         </PopoverContent>
       </Popover>
+
+      {resolved && (
+        <span className="text-sm text-muted-foreground tabular" aria-live="polite">
+          {formatDateRange(resolved.from, resolved.to)}
+        </span>
+      )}
     </div>
   )
 }

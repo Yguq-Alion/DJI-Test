@@ -5,6 +5,7 @@ import type {
   Manager,
   RankingResponse,
   RecentSalesResponse,
+  TimeseriesResponse,
 } from '@/api/types'
 
 const period = { from: '2026-08-25', to: '2026-09-23', tz: 'Europe/Moscow' }
@@ -152,7 +153,10 @@ export const emptyCategories: CategoriesResponse = {
 
 export const recentSales: RecentSalesResponse = {
   period,
-  nextCursor: null,
+  page: 1,
+  pageSize: 12,
+  totalCount: 13,
+  totalPages: 2,
   items: [
     {
       id: 10,
@@ -165,6 +169,57 @@ export const recentSales: RecentSalesResponse = {
       amount: 904_908,
       grossProfit: 109_598,
       refund: { refundedAt: '2026-09-25T10:00:00Z', itemsRestocked: false, reason: 'Брак', extraCosts: 5000 },
+    },
+  ],
+}
+
+/** Вторая (последняя) страница последних продаж. */
+export const recentSalesPage2: RecentSalesResponse = {
+  ...recentSales,
+  page: 2,
+  items: [
+    {
+      id: 3,
+      soldAt: '2026-08-26T09:15:00Z',
+      status: 'paid',
+      manager: boris,
+      customer: 'Ольга Смирнова',
+      company: 'ИП «АгроТех»',
+      items: [{ product: 'DJI Mini 4 Pro', quantity: 2, unitPrice: 89_990 }],
+      amount: 179_980,
+      grossProfit: 31_200,
+      refund: null,
+    },
+  ],
+}
+
+export const timeseries: TimeseriesResponse = {
+  period,
+  granularity: 'day',
+  points: [
+    {
+      bucketStart: '2026-09-01T00:00:00',
+      revenue: 1_000_000,
+      grossProfit: 200_000,
+      salesCount: 4,
+      refundsCount: 0,
+      refundedAmount: 0,
+    },
+    {
+      bucketStart: '2026-09-02T00:00:00',
+      revenue: -300_000,
+      grossProfit: -80_000,
+      salesCount: 1,
+      refundsCount: 2,
+      refundedAmount: 450_000,
+    },
+    {
+      bucketStart: '2026-09-03T00:00:00',
+      revenue: 500_000,
+      grossProfit: 90_000,
+      salesCount: 2,
+      refundsCount: 1,
+      refundedAmount: 50_000,
     },
   ],
 }

@@ -3,9 +3,12 @@ import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { Hint } from './hint'
 
 interface BlockCardProps {
   title: string
+  /** Пояснение к блоку — показывается по наведению на заголовок. */
+  hint?: ReactNode
   description?: ReactNode
   action?: ReactNode
   className?: string
@@ -15,6 +18,7 @@ interface BlockCardProps {
 
 export function BlockCard({
   title,
+  hint,
   description,
   action,
   className,
@@ -24,7 +28,7 @@ export function BlockCard({
   return (
     <Card className={cn('gap-4', className)}>
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle className="text-base">{hint ? <Hint content={hint}>{title}</Hint> : title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
         {action && <CardAction>{action}</CardAction>}
       </CardHeader>

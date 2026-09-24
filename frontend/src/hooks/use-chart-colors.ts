@@ -4,6 +4,7 @@ export interface ChartColors {
   series1: string
   series2: string
   series3: string
+  critical: string
   grid: string
   axis: string
   text: string
@@ -18,6 +19,7 @@ function read(): ChartColors {
     series1: v('--series-1', '#2a78d6'),
     series2: v('--series-2', '#eb6834'),
     series3: v('--series-3', '#1baf7a'),
+    critical: v('--critical', '#d03b3b'),
     grid: v('--grid', '#e1e0d9'),
     axis: v('--border', '#c3c2b7'),
     text: v('--foreground', '#0b0b0b'),

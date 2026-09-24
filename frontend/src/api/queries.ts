@@ -7,7 +7,9 @@ import type {
   RankingResponse,
   RankingSort,
   RecentSalesResponse,
+  RecentSalesSort,
   SaleStatus,
+  SortDirection,
   TimeseriesResponse,
   TopProductsResponse,
 } from './types'
@@ -56,17 +58,24 @@ export function useTopProducts(period: PeriodParams, limit = 8) {
   })
 }
 
-export function useRecentSales(period: PeriodParams, filters: { status?: SaleStatus; managerId?: number }) {
+export interface RecentSalesOptions {
+  status?: SaleStatus
+  managerId?: number
+  sortBy: RecentSalesSort
+  sortDir: SortDirection
+}
+
+export function useRecentSales(period: PeriodParams, options: RecentSalesOptions) {
   return useInfiniteQuery({
-    queryKey: ['recentSales', period, filters],
+    queryKey: ['recentSales', period, options],
     queryFn: ({ signal, pageParam }) =>
       apiGet<RecentSalesResponse>(
         'sales/recent',
-        { ...period, limit: 12, cursor: pageParam, status: filters.status, managerId: filters.managerId },
+        { ...period, ...options, limit: 12, page: pageParam },
         signal,
       ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.totalPages ? last.page + 1 : undefined),
     placeholderData: keepPreviousData,
   })
 }

@@ -1,27 +1,43 @@
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useRanking, useRecentSales } from '@/api/queries'
-import type { RecentSale, SaleStatus } from '@/api/types'
+import type { RecentSale, RecentSalesSort, SaleStatus, SortDirection } from '@/api/types'
 import { BlockCard, QueryState } from '@/components/dashboard/block-card'
 import { ManagerAvatar } from '@/components/dashboard/manager-avatar'
+import { nextSort, SortableHead, type SortState } from '@/components/dashboard/sortable-head'
 import { STATUS_LABELS, StatusBadge } from '@/components/dashboard/status-badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { usePeriod } from '@/features/period/period-state'
 import { useRankingSort } from '@/features/ranking/ranking-card'
-import { formatDateTime, formatMoney } from '@/lib/format'
+import { formatDateTime, formatInteger, formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 const ALL = 'all'
+
+const DEFAULT_SORT: SortState<RecentSalesSort> = { key: 'soldAt', dir: 'desc' }
+
+// Числа и даты при первом клике сортируются по убыванию, текст — по алфавиту.
+const FIRST_DIR: Record<RecentSalesSort, SortDirection> = {
+  soldAt: 'desc',
+  manager: 'asc',
+  customer: 'asc',
+  items: 'asc',
+  status: 'asc',
+  amount: 'desc',
+  grossProfit: 'desc',
+}
 
 export function RecentSalesCard({ className }: { className?: string }) {
   const { params } = usePeriod()
   const [status, setStatus] = useState<SaleStatus | undefined>()
   const [managerId, setManagerId] = useState<number | undefined>()
-  const query = useRecentSales(params, { status, managerId })
+  const [sort, setSort] = useState(DEFAULT_SORT)
+  const onSort = (column: RecentSalesSort) => setSort((s) => nextSort(s, column, FIRST_DIR[column]))
+  const query = useRecentSales(params, { status, managerId, sortBy: sort.key, sortDir: sort.dir })
   const [sortBy] = useRankingSort()
   // Список менеджеров для фильтра берём из уже загруженного рейтинга — без отдельного запроса.
   const managers = (useRanking(params, sortBy).data?.items ?? [])
@@ -29,11 +45,11 @@ export function RecentSalesCard({ className }: { className?: string }) {
     .sort((a, b) => a.fullName.localeCompare(b.fullName, 'ru'))
 
   const sales = query.data?.pages.flatMap((p) => p.items) ?? []
+  const lastPage = query.data?.pages.at(-1)
 
   return (
     <BlockCard
       title="Последние продажи"
-      description="Продажи выбранного периода, от новых к старым"
       className={className}
       action={
         <div className="flex gap-2">
@@ -85,13 +101,27 @@ export function RecentSalesCard({ className }: { className?: string }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-36">Дата</TableHead>
-              <TableHead>Менеджер</TableHead>
-              <TableHead>Клиент</TableHead>
-              <TableHead>Товары</TableHead>
-              <TableHead>Статус</TableHead>
-              <TableHead className="text-right">Сумма</TableHead>
-              <TableHead className="text-right">Валовая прибыль</TableHead>
+              <SortableHead column="soldAt" sort={sort} onSort={onSort} className="w-36">
+                Дата
+              </SortableHead>
+              <SortableHead column="manager" sort={sort} onSort={onSort}>
+                Менеджер
+              </SortableHead>
+              <SortableHead column="customer" sort={sort} onSort={onSort}>
+                Клиент
+              </SortableHead>
+              <SortableHead column="items" sort={sort} onSort={onSort}>
+                Товары
+              </SortableHead>
+              <SortableHead column="status" sort={sort} onSort={onSort}>
+                Статус
+              </SortableHead>
+              <SortableHead column="amount" sort={sort} onSort={onSort} align="right">
+                Сумма
+              </SortableHead>
+              <SortableHead column="grossProfit" sort={sort} onSort={onSort} align="right">
+                Валовая прибыль
+              </SortableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -100,17 +130,23 @@ export function RecentSalesCard({ className }: { className?: string }) {
             ))}
           </TableBody>
         </Table>
-        {query.hasNextPage && (
-          <div className="flex justify-center pt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void query.fetchNextPage()}
-              disabled={query.isFetchingNextPage}
-            >
-              {query.isFetchingNextPage && <Loader2 className="animate-spin" aria-hidden />}
-              Загрузить ещё
-            </Button>
+        {lastPage && (
+          <div className="relative flex min-h-12 items-center justify-center pt-4">
+            {query.hasNextPage && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void query.fetchNextPage()}
+                disabled={query.isFetchingNextPage}
+              >
+                {query.isFetchingNextPage && <Loader2 className="animate-spin" aria-hidden />}
+                Загрузить ещё
+              </Button>
+            )}
+            <div className="absolute right-0 text-xs text-muted-foreground tabular" aria-live="polite">
+              Страница {lastPage.page} из {lastPage.totalPages} · показано {formatInteger(sales.length)} из{' '}
+              {formatInteger(lastPage.totalCount)}
+            </div>
           </div>
         )}
       </QueryState>

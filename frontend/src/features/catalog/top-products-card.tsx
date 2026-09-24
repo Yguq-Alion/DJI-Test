@@ -10,7 +10,11 @@ export function TopProductsCard({ className }: { className?: string }) {
   const items = query.data?.items ?? []
 
   return (
-    <BlockCard title="Лучшие товары" description="По чистой выручке за период" className={className}>
+    <BlockCard
+      title="Лучшие товары"
+      hint="Товары с наибольшей чистой выручкой за период: продажи минус возвраты. Количество — проданные штуки за вычетом возвращённых."
+      className={className}
+    >
       <QueryState
         isPending={query.isPending}
         isError={query.isError}

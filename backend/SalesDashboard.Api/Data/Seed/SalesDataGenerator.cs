@@ -201,7 +201,23 @@ public sealed class SalesDataGenerator(int seed = SalesDataGenerator.DefaultSeed
 
     private void TryRefund(Sale sale, DateTimeOffset now)
     {
-        var refundedAt = sale.SoldAt.AddDays(1 + _random.Next(30)).AddMinutes(_random.Next(-180, 180));
+        var kind = Weighted(
+            (RefundKind.Quick, 0.30),
+            (RefundKind.Standard, 0.35),
+            (RefundKind.Warranty, 0.15),
+            (RefundKind.Damaged, 0.12),
+            (RefundKind.Disputed, 0.08));
+
+        // Срок возврата зависит от сценария: от нескольких часов до трёх месяцев.
+        var delay = kind switch
+        {
+            RefundKind.Quick => TimeSpan.FromHours(2 + _random.Next(70)),
+            RefundKind.Standard => TimeSpan.FromDays(4 + _random.Next(27)),
+            RefundKind.Warranty => TimeSpan.FromDays(31 + _random.Next(60)),
+            RefundKind.Damaged => TimeSpan.FromDays(1 + _random.Next(10)),
+            _ => TimeSpan.FromDays(10 + _random.Next(35)),
+        };
+        var refundedAt = sale.SoldAt.Add(delay).AddMinutes(_random.Next(0, 120));
         if (refundedAt > now)
         {
             // Возврат «ещё не случился» — продажа остаётся оплаченной.
@@ -209,42 +225,100 @@ public sealed class SalesDataGenerator(int seed = SalesDataGenerator.DefaultSeed
         }
 
         var total = sale.Items.Sum(i => i.UnitPrice * i.Quantity);
+        var restocked = kind switch
+        {
+            RefundKind.Quick => _random.NextDouble() < 0.97,
+            RefundKind.Standard => _random.NextDouble() < RestockProbability,
+            RefundKind.Warranty => _random.NextDouble() < 0.45,
+            RefundKind.Damaged => false,
+            _ => _random.NextDouble() < 0.6,
+        };
+
         var costs = new List<RefundCost>();
-        if (_random.NextDouble() < 0.7)
+        void Add(RefundCostType type, decimal amount) => costs.Add(new RefundCost { Type = type, Amount = Math.Round(amount, 0) });
+        decimal Share(double min, double max) => total * (decimal)(min + (max - min) * _random.NextDouble());
+
+        switch (kind)
         {
-            costs.Add(new RefundCost { Type = RefundCostType.Logistics, Amount = Math.Round(Math.Max(500m, total * (decimal)(0.005 + 0.02 * _random.NextDouble())), 0) });
+            case RefundKind.Quick:
+                // Отказ в первые дни: товар не распакован, расходы минимальны или отсутствуют.
+                if (_random.NextDouble() < 0.35)
+                {
+                    Add(RefundCostType.Packaging, 300 + _random.Next(6) * 100);
+                }
+
+                break;
+            case RefundKind.Standard:
+                if (_random.NextDouble() < 0.7)
+                {
+                    Add(RefundCostType.Logistics, Math.Max(500m, Share(0.005, 0.02)));
+                }
+
+                if (_random.NextDouble() < 0.4)
+                {
+                    Add(RefundCostType.Packaging, 300 + _random.Next(12) * 100);
+                }
+
+                break;
+            case RefundKind.Warranty:
+                // Гарантийный случай: обязательная экспертиза, логистика в сервис и обратно.
+                Add(RefundCostType.Inspection, 3_000 + _random.Next(20) * 500);
+                Add(RefundCostType.Logistics, Math.Max(1_500m, Share(0.01, 0.03)));
+                break;
+            case RefundKind.Damaged:
+                // Повреждение при доставке: товар списан, дорогая обратная логистика.
+                Add(RefundCostType.Logistics, Math.Max(2_000m, Share(0.02, 0.05)));
+                if (_random.NextDouble() < 0.5)
+                {
+                    Add(RefundCostType.Other, Math.Max(1_000m, Share(0.005, 0.02)));
+                }
+
+                break;
+            default:
+                // Спорный возврат: экспертиза, юридические и прочие расходы.
+                Add(RefundCostType.Inspection, 5_000 + _random.Next(20) * 1_000);
+                Add(RefundCostType.Logistics, Math.Max(1_000m, Share(0.01, 0.025)));
+                Add(RefundCostType.Other, Math.Max(3_000m, Share(0.01, 0.04)));
+                Add(RefundCostType.Packaging, 500 + _random.Next(10) * 100);
+                break;
         }
 
-        if (_random.NextDouble() < 0.4)
+        var reason = kind switch
         {
-            costs.Add(new RefundCost { Type = RefundCostType.Packaging, Amount = 300 + _random.Next(12) * 100 });
-        }
+            RefundKind.Quick => Pick(SeedCatalog.QuickRefundReasons),
+            RefundKind.Warranty => Pick(SeedCatalog.WarrantyRefundReasons),
+            RefundKind.Damaged => "Повреждение при доставке",
+            RefundKind.Disputed => Pick(SeedCatalog.DisputedRefundReasons),
+            _ => Pick(SeedCatalog.RefundReasons),
+        };
 
-        if (_random.NextDouble() < 0.25)
-        {
-            costs.Add(new RefundCost { Type = RefundCostType.Inspection, Amount = 2_000 + _random.Next(13) * 500 });
-        }
+        sale.MarkRefunded(refundedAt, restocked, reason, costs);
+    }
 
-        if (_random.NextDouble() < 0.1)
-        {
-            costs.Add(new RefundCost { Type = RefundCostType.Other, Amount = 500 + _random.Next(20) * 250 });
-        }
-
-        sale.MarkRefunded(refundedAt, _random.NextDouble() < RestockProbability, Pick(SeedCatalog.RefundReasons), costs);
+    /// <summary>Сценарии возврата: разные сроки, судьба товара и уровень доп. расходов.</summary>
+    private enum RefundKind
+    {
+        Quick,
+        Standard,
+        Warranty,
+        Damaged,
+        Disputed,
     }
 
     /// <summary>Несколько крупных сделок-выбросов для проверки устойчивости графиков и рейтинга.</summary>
     private void AddOutlierDeals(List<Sale> sales, List<Manager> managers, List<Customer> customers, List<Product> products, DateOnly today, DateTimeOffset now)
     {
         var enterpriseCustomers = customers.Where(c => c.Segment == CustomerSegment.Enterprise).ToList();
-        (int DaysAgo, int ManagerIndex, (string Product, int Qty)[] Items)[] deals =
+        // RefundAfterDays: крупная сделка, которую клиент вернул целиком, — проверка сторно на выбросе.
+        (int DaysAgo, int ManagerIndex, (string Product, int Qty)[] Items, int? RefundAfterDays)[] deals =
         [
-            (210, 1, [("DJI Dock 3", 12), ("DJI Matrice 4T", 12), ("DJI Care Enterprise Plus", 12)]),
-            (96, 17, [("DJI Agras T50", 18), ("Агро-комплект батарей DB1560", 40), ("Выездное обучение экипажа", 3)]),
-            (19, 0, [("DJI Matrice 350 RTK", 15), ("Zenmuse L2 LiDAR", 15), ("Годовое ТО промышленного дрона", 15)]),
+            (210, 1, [("DJI Dock 3", 12), ("DJI Matrice 4T", 12), ("DJI Care Enterprise Plus", 12)], null),
+            (96, 17, [("DJI Agras T50", 18), ("Агро-комплект батарей DB1560", 40), ("Выездное обучение экипажа", 3)], null),
+            (58, 4, [("DJI Matrice 350 RTK", 6), ("Zenmuse H30T", 6)], 17),
+            (19, 0, [("DJI Matrice 350 RTK", 15), ("Zenmuse L2 LiDAR", 15), ("Годовое ТО промышленного дрона", 15)], null),
         ];
 
-        foreach (var (daysAgo, managerIndex, items) in deals)
+        foreach (var (daysAgo, managerIndex, items, refundAfterDays) in deals)
         {
             var soldAt = RandomWorkTime(today.AddDays(-daysAgo));
             if (soldAt > now)
@@ -268,6 +342,16 @@ public sealed class SalesDataGenerator(int seed = SalesDataGenerator.DefaultSeed
                     UnitPrice = Math.Round(product.ListPrice * 0.88m, 0),
                     UnitCost = product.BaseCost,
                 });
+            }
+
+            if (refundAfterDays is { } days && sale.SoldAt.AddDays(days) <= now)
+            {
+                var total = sale.Items.Sum(i => i.UnitPrice * i.Quantity);
+                sale.MarkRefunded(sale.SoldAt.AddDays(days), itemsRestocked: true, "Расторжение договора поставки",
+                [
+                    new RefundCost { Type = RefundCostType.Logistics, Amount = Math.Round(total * 0.012m, 0) },
+                    new RefundCost { Type = RefundCostType.Inspection, Amount = 45_000 },
+                ]);
             }
 
             sales.Add(sale);

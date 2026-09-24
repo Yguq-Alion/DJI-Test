@@ -1,6 +1,6 @@
 import { ResponsiveBar } from '@nivo/bar'
-import { ResponsiveLine, type SliceTooltipProps } from '@nivo/line'
-import { useMemo } from 'react'
+import { type LineCustomSvgLayerProps, ResponsiveLine, type SliceTooltipProps } from '@nivo/line'
+import { useCallback, useMemo } from 'react'
 import { useTimeseries } from '@/api/queries'
 import type { Granularity, TimeseriesPoint } from '@/api/types'
 import { BlockCard, QueryState } from '@/components/dashboard/block-card'
@@ -10,7 +10,9 @@ import { usePeriod } from '@/features/period/period-state'
 import { type ChartColors, useChartColors } from '@/hooks/use-chart-colors'
 import { formatInteger, formatMoney, formatMoneyCompact } from '@/lib/format'
 import { formatBucketTick, formatBucketTitle, GRANULARITY_OPTIONS, useGranularity } from './granularity'
+import { refundMarkers } from './refund-markers'
 
+const PROFIT_SERIES = 'Валовая прибыль'
 const MARGIN = { top: 12, right: 16, bottom: 8, left: 72 }
 const GRANULARITY_LABEL: Record<Granularity, string> = {
   hour: 'по часам',
@@ -44,10 +46,12 @@ export function DynamicsCard({ className }: { className?: string }) {
   return (
     <BlockCard
       title="Динамика"
-      description={
-        query.data
-          ? `Выручка и валовая прибыль ${GRANULARITY_LABEL[query.data.granularity]}, возвраты — в дату возврата`
-          : ' '
+      hint={
+        <>
+          Выручка и валовая прибыль {GRANULARITY_LABEL[query.data?.granularity ?? 'day']}. Возвраты вычитаются
+          в дату возврата, а не в дату продажи, поэтому прибыль в отдельные дни может быть отрицательной.
+          Красные отметки на линии прибыли — дни с возвратами.
+        </>
       }
       className={className}
       action={
@@ -96,12 +100,44 @@ function DynamicsCharts({ points, granularity }: { points: TimeseriesPoint[]; gr
     () => [
       { id: 'Выручка', color: colors.series1, data: points.map((p) => ({ x: p.bucketStart, y: p.revenue })) },
       {
-        id: 'Валовая прибыль',
+        id: PROFIT_SERIES,
         color: colors.series2,
         data: points.map((p) => ({ x: p.bucketStart, y: p.grossProfit })),
       },
     ],
     [points, colors],
+  )
+
+  const markers = useMemo(() => refundMarkers(points), [points])
+
+  // Красные отметки на линии прибыли в бакетах с возвратами (размер — по сумме возвратов).
+  const RefundMarkersLayer = useCallback(
+    ({ points: linePoints }: LineCustomSvgLayerProps<(typeof lineData)[number]>) => {
+      const profitPoints = new Map(
+        linePoints.filter((p) => p.seriesId === PROFIT_SERIES).map((p) => [String(p.data.x), p]),
+      )
+      return (
+        <g aria-label="Возвраты">
+          {markers.map((m) => {
+            const point = profitPoints.get(m.bucketStart)
+            if (!point) return null
+            return (
+              <circle
+                key={m.bucketStart}
+                cx={point.x}
+                cy={point.y}
+                r={m.radius}
+                fill={colors.critical}
+                fillOpacity={0.85}
+                stroke={colors.surface}
+                strokeWidth={1.5}
+              />
+            )
+          })}
+        </g>
+      )
+    },
+    [markers, colors],
   )
 
   const sliceTooltip = ({ slice }: SliceTooltipProps<(typeof lineData)[number]>) => {
@@ -116,6 +152,12 @@ function DynamicsCharts({ points, granularity }: { points: TimeseriesPoint[]; gr
       <div className="flex items-center gap-4 pl-[72px] text-xs text-muted-foreground" aria-hidden>
         <LegendItem color={colors.series1} label="Выручка" />
         <LegendItem color={colors.series2} label="Валовая прибыль" />
+        {markers.length > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: colors.critical }} />
+            Возвраты
+          </span>
+        )}
       </div>
       <div className="h-[250px]" role="img" aria-label="График выручки и валовой прибыли">
         <ResponsiveLine
@@ -142,6 +184,18 @@ function DynamicsCharts({ points, granularity }: { points: TimeseriesPoint[]; gr
           enableSlices="x"
           sliceTooltip={sliceTooltip}
           markers={[{ axis: 'y', value: 0, lineStyle: { stroke: colors.axis, strokeWidth: 1 } }]}
+          layers={[
+            'grid',
+            'markers',
+            'axes',
+            'areas',
+            'crosshair',
+            'lines',
+            'points',
+            RefundMarkersLayer,
+            'slices',
+            'mesh',
+          ]}
           animate
           motionConfig="gentle"
         />
@@ -184,7 +238,7 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   )
 }
 
-function ChartTooltip({
+export function ChartTooltip({
   point,
   granularity,
   colors,
@@ -199,6 +253,13 @@ function ChartTooltip({
       <TooltipRow color={colors.series1} label="Выручка" value={formatMoney(point.revenue)} />
       <TooltipRow color={colors.series2} label="Валовая прибыль" value={formatMoney(point.grossProfit)} />
       <TooltipRow color={colors.series3} label="Продажи" value={formatInteger(point.salesCount)} />
+      {point.refundsCount > 0 && (
+        <TooltipRow
+          color={colors.critical}
+          label={`Возвраты (${formatInteger(point.refundsCount)})`}
+          value={`−${formatMoney(point.refundedAmount)}`}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,9 @@ test('renders dashboard shell', () => {
       <App />
     </AppProviders>,
   )
-  expect(screen.getByRole('heading', { name: /sales performance/i })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Статистика продаж DJS' })).toBeInTheDocument()
   expect(screen.getByRole('radiogroup', { name: 'Период' })).toBeInTheDocument()
+  // Период — в начале статистики, а не в шапке.
+  expect(screen.getByRole('banner')).not.toContainElement(screen.getByRole('radiogroup', { name: 'Период' }))
+  expect(screen.queryByText(/Периоды считаются в вашем часовом поясе/)).not.toBeInTheDocument()
 })

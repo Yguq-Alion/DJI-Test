@@ -56,7 +56,7 @@ public sealed class DashboardController(AppDbContext db, AnalyticsQueries analyt
         }
 
         var rows = await analytics.GetTimeseriesAsync(current, granularity, ct);
-        var points = rows.Select(r => new TimeseriesPoint(r.BucketStart, r.Revenue, r.GrossProfit, r.SalesCount)).ToList();
+        var points = rows.Select(r => new TimeseriesPoint(r.BucketStart, r.Revenue, r.GrossProfit, r.SalesCount, r.RefundsCount, r.RefundedAmount)).ToList();
         return new TimeseriesResponse(PeriodDto.Of(current), granularity, points);
     }
 

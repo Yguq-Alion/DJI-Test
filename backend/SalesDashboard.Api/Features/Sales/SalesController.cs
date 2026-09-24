@@ -1,6 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Globalization;
-using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalesDashboard.Api.Common.Periods;
@@ -10,13 +8,35 @@ using SalesDashboard.Api.Features.Analytics;
 
 namespace SalesDashboard.Api.Features.Sales;
 
+public enum RecentSalesSort
+{
+    SoldAt,
+    Manager,
+    Customer,
+    Items,
+    Status,
+    Amount,
+    GrossProfit,
+}
+
+public enum SortDirection
+{
+    Asc,
+    Desc,
+}
+
 public sealed class RecentSalesQuery : PeriodQuery
 {
     [Range(1, 100)]
     public int Limit { get; set; } = 20;
 
-    /// <summary>Непрозрачный курсор из nextCursor предыдущей страницы.</summary>
-    public string? Cursor { get; set; }
+    /// <summary>Номер страницы, с 1.</summary>
+    [Range(1, 100_000)]
+    public int Page { get; set; } = 1;
+
+    public RecentSalesSort SortBy { get; set; } = RecentSalesSort.SoldAt;
+
+    public SortDirection SortDir { get; set; } = SortDirection.Desc;
 
     public SaleStatus? Status { get; set; }
 
@@ -39,15 +59,22 @@ public sealed record RecentSaleDto(
     decimal GrossProfit,
     RefundDto? Refund);
 
-public sealed record RecentSalesResponse(PeriodDto Period, IReadOnlyList<RecentSaleDto> Items, string? NextCursor);
+public sealed record RecentSalesResponse(
+    PeriodDto Period,
+    IReadOnlyList<RecentSaleDto> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
 
 [ApiController]
 [Route("api/sales")]
 public sealed class SalesController(AppDbContext db, PeriodResolver periods) : ControllerBase
 {
     /// <summary>
-    /// Продажи периода от новых к старым. Keyset-пагинация по (sold_at, id): стабильна при вставках
-    /// и не деградирует на глубоких страницах, в отличие от OFFSET.
+    /// Продажи периода с сортировкой по любой колонке таблицы и постраничной выдачей.
+    /// OFFSET вместо keyset: сортировка идёт и по вычисляемым полям (сумма, прибыль), а в периоде
+    /// не больше нескольких тысяч продаж — глубина страниц здесь не проблема, зато есть общее число страниц.
     /// </summary>
     [HttpGet("recent")]
     public async Task<ActionResult<RecentSalesResponse>> GetRecent([FromQuery] RecentSalesQuery query, CancellationToken ct)
@@ -67,21 +94,11 @@ public sealed class SalesController(AppDbContext db, PeriodResolver periods) : C
             sales = sales.Where(s => s.ManagerId == managerId);
         }
 
-        if (query.Cursor is not null)
-        {
-            if (!TryDecodeCursor(query.Cursor, out var soldAt, out var id))
-            {
-                ModelState.AddModelError(nameof(query.Cursor), "Некорректный курсор.");
-                return ValidationProblem(ModelState);
-            }
+        var totalCount = await sales.CountAsync(ct);
 
-            sales = sales.Where(s => s.SoldAt < soldAt || (s.SoldAt == soldAt && s.Id < id));
-        }
-
-        var page = await sales
-            .OrderByDescending(s => s.SoldAt)
-            .ThenByDescending(s => s.Id)
-            .Take(query.Limit + 1)
+        var page = await Sort(sales, query.SortBy, query.SortDir)
+            .Skip((query.Page - 1) * query.Limit)
+            .Take(query.Limit)
             .Select(s => new
             {
                 s.Id,
@@ -100,8 +117,7 @@ public sealed class SalesController(AppDbContext db, PeriodResolver periods) : C
             .AsSplitQuery()
             .ToListAsync(ct);
 
-        var hasMore = page.Count > query.Limit;
-        var items = page.Take(query.Limit).Select(s => new RecentSaleDto(
+        var items = page.Select(s => new RecentSaleDto(
                 s.Id,
                 s.SoldAt,
                 s.Status,
@@ -114,36 +130,37 @@ public sealed class SalesController(AppDbContext db, PeriodResolver periods) : C
                 s.Refund))
             .ToList();
 
-        var next = hasMore ? EncodeCursor(items[^1].SoldAt, items[^1].Id) : null;
-        return new RecentSalesResponse(PeriodDto.Of(current), items, next);
+        var totalPages = (totalCount + query.Limit - 1) / query.Limit;
+        return new RecentSalesResponse(PeriodDto.Of(current), items, query.Page, query.Limit, totalCount, totalPages);
     }
 
-    private static string EncodeCursor(DateTimeOffset soldAt, long id) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes($"{soldAt.UtcTicks}:{id}")).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static bool TryDecodeCursor(string cursor, out DateTimeOffset soldAt, out long id)
+    /// <summary>
+    /// Сортировка по выбранной колонке; (sold_at, id) в конце — детерминированный порядок
+    /// при равных значениях, иначе строки «переезжали» бы между страницами.
+    /// </summary>
+    private static IOrderedQueryable<Sale> Sort(IQueryable<Sale> sales, RecentSalesSort sortBy, SortDirection dir)
     {
-        soldAt = default;
-        id = 0;
-        try
+        var desc = dir == SortDirection.Desc;
+        IOrderedQueryable<Sale> ordered = sortBy switch
         {
-            var base64 = cursor.Replace('-', '+').Replace('_', '/');
-            base64 = base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '=');
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(base64)).Split(':');
-            if (parts.Length != 2
-                || !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
-                || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out id)
-                || ticks < DateTimeOffset.MinValue.UtcTicks || ticks > DateTimeOffset.MaxValue.UtcTicks)
-            {
-                return false;
-            }
+            RecentSalesSort.Manager => desc ? sales.OrderByDescending(s => s.Manager.FullName) : sales.OrderBy(s => s.Manager.FullName),
+            RecentSalesSort.Customer => desc ? sales.OrderByDescending(s => s.Customer.Company) : sales.OrderBy(s => s.Customer.Company),
+            // «Товары» в таблице начинаются с самой крупной позиции — по ней и сортируем.
+            RecentSalesSort.Items => desc
+                ? sales.OrderByDescending(s => s.Items.OrderByDescending(i => i.Quantity * i.UnitPrice).Select(i => i.Product.Name).FirstOrDefault())
+                : sales.OrderBy(s => s.Items.OrderByDescending(i => i.Quantity * i.UnitPrice).Select(i => i.Product.Name).FirstOrDefault()),
+            RecentSalesSort.Status => desc ? sales.OrderByDescending(s => s.Status) : sales.OrderBy(s => s.Status),
+            RecentSalesSort.Amount => desc
+                ? sales.OrderByDescending(s => s.Items.Sum(i => i.Quantity * i.UnitPrice))
+                : sales.OrderBy(s => s.Items.Sum(i => i.Quantity * i.UnitPrice)),
+            RecentSalesSort.GrossProfit => desc
+                ? sales.OrderByDescending(s => s.Items.Sum(i => i.Quantity * (i.UnitPrice - i.UnitCost)))
+                : sales.OrderBy(s => s.Items.Sum(i => i.Quantity * (i.UnitPrice - i.UnitCost))),
+            _ => desc ? sales.OrderByDescending(s => s.SoldAt) : sales.OrderBy(s => s.SoldAt),
+        };
 
-            soldAt = new DateTimeOffset(ticks, TimeSpan.Zero);
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
+        return desc
+            ? ordered.ThenByDescending(s => s.SoldAt).ThenByDescending(s => s.Id)
+            : ordered.ThenBy(s => s.SoldAt).ThenBy(s => s.Id);
     }
 }

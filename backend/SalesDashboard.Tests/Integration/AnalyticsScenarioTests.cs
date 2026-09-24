@@ -153,6 +153,9 @@ public sealed class AnalyticsScenarioTests(ApiFactory factory) : IAsyncLifetime
         var june5 = points.Single(p => p.GetProperty("bucketStart").GetString() == "2026-06-05T00:00:00");
         Assert.Equal(-500m, june5.GetProperty("revenue").GetDecimal());
         Assert.Equal(-(500m - 300m + 30m), june5.GetProperty("grossProfit").GetDecimal());
+        Assert.Equal(1, june5.GetProperty("refundsCount").GetInt32());
+        Assert.Equal(500m, june5.GetProperty("refundedAmount").GetDecimal());
+        Assert.Equal(2, points.Sum(p => p.GetProperty("refundsCount").GetInt32()));
 
         var june9 = points.Single(p => p.GetProperty("bucketStart").GetString() == "2026-06-09T00:00:00");
         Assert.Equal(0m, june9.GetProperty("revenue").GetDecimal());
@@ -171,20 +174,32 @@ public sealed class AnalyticsScenarioTests(ApiFactory factory) : IAsyncLifetime
     public async Task RecentSales_PagesWithoutGapsOrDuplicates()
     {
         var ids = new List<long>();
-        string? cursor = null;
-        var pages = 0;
-        do
+        for (var pageNumber = 1; pageNumber <= 3; pageNumber++)
         {
-            var page = await GetJson($"/api/sales/recent?{Period}&limit=2" + (cursor is null ? "" : $"&cursor={cursor}"));
-            ids.AddRange(page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt64()));
-            cursor = page.GetProperty("nextCursor").GetString();
-            pages++;
+            var page = await GetJson($"/api/sales/recent?{Period}&limit=2&page={pageNumber}");
+            ids.AddRange(Ids(page));
+            Assert.Equal(pageNumber, page.GetProperty("page").GetInt32());
+            Assert.Equal(5, page.GetProperty("totalCount").GetInt32());
+            Assert.Equal(3, page.GetProperty("totalPages").GetInt32());
         }
-        while (cursor is not null && pages < 10);
 
-        // S1, S2, S4 (отменённая тоже видна в списке), S5, S6 — от новых к старым.
-        Assert.Equal(3, pages);
+        // S1, S2, S4 (отменённая тоже видна в списке), S5, S6 — по умолчанию от новых к старым.
         Assert.Equal([5L, 4, 2, 1, 6], ids);
+    }
+
+    [Theory]
+    // Суммы: S1 200, S2 500, S4 1000, S5 400, S6 100. Прибыль: S1 80, S2 200, S4 400, S5 150, S6 40.
+    [InlineData("amount", "asc", new long[] { 6, 1, 5, 2, 4 })]
+    [InlineData("grossProfit", "desc", new long[] { 4, 2, 5, 1, 6 })]
+    [InlineData("soldAt", "asc", new long[] { 6, 1, 2, 4, 5 })]
+    // Равные значения (один менеджер) упорядочиваются по дате в том же направлении.
+    [InlineData("manager", "asc", new long[] { 6, 1, 2, 4, 5 })]
+    [InlineData("manager", "desc", new long[] { 5, 4, 2, 1, 6 })]
+    public async Task RecentSales_SortsByColumn(string sortBy, string sortDir, long[] expected)
+    {
+        var page = await GetJson($"/api/sales/recent?{Period}&sortBy={sortBy}&sortDir={sortDir}");
+
+        Assert.Equal(expected, Ids(page));
     }
 
     [Fact]
@@ -201,7 +216,8 @@ public sealed class AnalyticsScenarioTests(ApiFactory factory) : IAsyncLifetime
     [InlineData("/api/dashboard/kpi?from=2026-06-10&to=2026-06-01&tz=Europe/Moscow")]
     [InlineData("/api/dashboard/timeseries?from=2025-06-01&to=2026-06-01&granularity=hour&tz=Europe/Moscow")]
     [InlineData("/api/managers/ranking?preset=30d&tz=Europe/Moscow&sortBy=revenue")]
-    [InlineData("/api/sales/recent?preset=30d&tz=Europe/Moscow&cursor=broken")]
+    [InlineData("/api/sales/recent?preset=30d&tz=Europe/Moscow&page=0")]
+    [InlineData("/api/sales/recent?preset=30d&tz=Europe/Moscow&sortBy=unknown")]
     public async Task InvalidRequests_Return400ProblemDetails(string url)
     {
         var response = await _client.GetAsync(url);
@@ -218,6 +234,9 @@ public sealed class AnalyticsScenarioTests(ApiFactory factory) : IAsyncLifetime
     }
 
     private static decimal Value(JsonElement kpi, string metric) => kpi.GetProperty(metric).GetProperty("value").GetDecimal();
+
+    private static List<long> Ids(JsonElement page) =>
+        page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt64()).ToList();
 
     private static string Name(JsonElement item) => item.GetProperty("manager").GetProperty("fullName").GetString()!;
 }

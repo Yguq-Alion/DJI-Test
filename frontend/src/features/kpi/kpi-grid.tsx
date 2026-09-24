@@ -10,17 +10,21 @@ import { ManagerAvatar } from '@/components/dashboard/manager-avatar'
 import { Sparkline } from '@/components/dashboard/sparkline'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Hint } from '@/components/dashboard/hint'
 import { useGranularity } from '@/features/dynamics/granularity'
 import { usePeriod } from '@/features/period/period-state'
 import { useChartColors } from '@/hooks/use-chart-colors'
-import { formatInteger, formatMoney, formatMoneyCompact, formatShare } from '@/lib/format'
+import { formatDateRange, formatInteger, formatMoney, formatMoneyCompact, formatShare } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface TileProps {
   label: string
   value: ReactNode
   exact?: string
+  /** Как считается показатель — показывается по наведению на значение. */
+  hint: string
+  /** Предыдущий период для сравнения, например «25 июл. – 25 авг.». */
+  comparedTo: string
   metric?: KpiValue
   invert?: boolean
   footnote?: ReactNode
@@ -33,21 +37,33 @@ const tileMotion = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 } as const
 
-function KpiTile({ label, value, exact, metric, invert, footnote, spark, className }: TileProps) {
-  const valueNode = <div className="font-heading text-2xl font-semibold tracking-tight">{value}</div>
+function KpiTile({
+  label,
+  value,
+  exact,
+  hint,
+  comparedTo,
+  metric,
+  invert,
+  footnote,
+  spark,
+  className,
+}: TileProps) {
   return (
     <MotionCard variants={tileMotion} className={cn('gap-2 px-5 py-4', className)}>
       <div className="text-sm text-muted-foreground">{label}</div>
-      {exact ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="w-fit cursor-default">{valueNode}</div>
-          </TooltipTrigger>
-          <TooltipContent>{exact}</TooltipContent>
-        </Tooltip>
-      ) : (
-        valueNode
-      )}
+      <Hint
+        className="font-heading text-2xl font-semibold tracking-tight"
+        content={
+          <div className="space-y-1">
+            {exact && <div className="font-semibold tabular">{exact}</div>}
+            <div>{hint}</div>
+            <div className="opacity-70">Изменение — к периоду {comparedTo}.</div>
+          </div>
+        }
+      >
+        {value}
+      </Hint>
       <div className="flex min-h-5 flex-wrap items-center gap-x-2 gap-y-0.5">
         {metric && <Delta change={metric.change} kind={metric.changeKind} invert={invert} />}
         {footnote && <span className="text-xs text-muted-foreground">{footnote}</span>}
@@ -70,7 +86,12 @@ function BestManagerTile({ best }: { best: KpiResponse['bestManager'] }) {
           <div className="flex items-center gap-2.5">
             <ManagerAvatar manager={best.manager} />
             <div className="min-w-0">
-              <div className="truncate font-semibold">{best.manager.fullName}</div>
+              <Hint
+                className="block truncate font-semibold"
+                content="Менеджер с максимальной валовой прибылью за период с учётом возвратов и расходов на них. При равной прибыли выше тот, у кого больше выручка."
+              >
+                {best.manager.fullName}
+              </Hint>
               <div className="truncate text-xs text-muted-foreground">{best.manager.team}</div>
             </div>
           </div>
@@ -127,6 +148,7 @@ export function KpiGrid() {
   }
 
   const refunds = data.refundedAmount.value ?? 0
+  const comparedTo = formatDateRange(data.previousPeriod.from, data.previousPeriod.to)
   return (
     <motion.section
       aria-label="Ключевые показатели"
@@ -138,6 +160,8 @@ export function KpiGrid() {
     >
       <KpiTile
         label="Выручка"
+        hint="Оплаченные продажи с датой в периоде минус возвраты, оформленные в периоде (в дату возврата, даже если продажа была раньше). Отменённые продажи не учитываются."
+        comparedTo={comparedTo}
         value={<AnimatedNumber value={data.revenue.value} format={formatMoneyCompact} />}
         exact={formatMoney(data.revenue.value)}
         metric={data.revenue}
@@ -146,6 +170,8 @@ export function KpiGrid() {
       />
       <KpiTile
         label="Валовая прибыль"
+        hint="Выручка минус себестоимость проданного и расходы на возвраты (логистика, экспертиза и т. д.). Себестоимость товара, вернувшегося на склад, сторнируется; потерянного — остаётся в расходах."
+        comparedTo={comparedTo}
         value={<AnimatedNumber value={data.grossProfit.value} format={formatMoneyCompact} />}
         exact={formatMoney(data.grossProfit.value)}
         metric={data.grossProfit}
@@ -153,11 +179,15 @@ export function KpiGrid() {
       />
       <KpiTile
         label="Маржинальность"
+        hint="Валовая прибыль / выручка. Изменение — в процентных пунктах."
+        comparedTo={comparedTo}
         value={<AnimatedNumber value={data.margin.value} format={formatShare} />}
         metric={data.margin}
       />
       <KpiTile
         label="Продажи"
+        hint="Количество продаж с датой в периоде: оплаченные и позже возвращённые. Отменённые не считаются. Доля возвратов — сколько из этих продаж уже вернули."
+        comparedTo={comparedTo}
         value={<AnimatedNumber value={data.salesCount.value} format={formatInteger} />}
         metric={data.salesCount}
         spark={{ values: series.map((p) => p.salesCount), color: colors.series3 }}
@@ -167,6 +197,8 @@ export function KpiGrid() {
       />
       <KpiTile
         label="Средний чек"
+        hint="Сумма продаж периода до вычета возвратов / количество продаж."
+        comparedTo={comparedTo}
         value={<AnimatedNumber value={data.averageCheck.value} format={formatMoneyCompact} />}
         exact={formatMoney(data.averageCheck.value)}
         metric={data.averageCheck}

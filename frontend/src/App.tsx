@@ -1,12 +1,10 @@
 import { lazy, Suspense } from 'react'
 import { Card } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CategoriesCard } from '@/features/catalog/categories-card'
 import { TopProductsCard } from '@/features/catalog/top-products-card'
 import { KpiGrid } from '@/features/kpi/kpi-grid'
 import { PeriodPicker } from '@/features/period/period-picker'
-import { USER_TIME_ZONE } from '@/features/period/period-state'
 import { RankingCard } from '@/features/ranking/ranking-card'
 import { RecentSalesCard } from '@/features/sales/recent-sales-card'
 import { ThemeToggle } from '@/features/theme/theme-toggle'
@@ -20,22 +18,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-muted/40 text-foreground">
       <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-6 px-8 py-3">
-          <div>
-            <h1 className="font-heading text-lg leading-tight font-semibold tracking-tight">
-              Sales Performance
-            </h1>
-            <p className="text-xs text-muted-foreground">Аналитика продаж менеджеров · DJI-Market</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <PeriodPicker />
-            <Separator orientation="vertical" className="h-6" />
+        <div className="mx-auto grid max-w-[1440px] grid-cols-[1fr_auto_1fr] items-center px-8 py-3">
+          <h1 className="col-start-2 font-heading text-lg leading-tight font-semibold tracking-tight">
+            Статистика продаж DJS
+          </h1>
+          <div className="justify-self-end">
             <ThemeToggle />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1440px] space-y-4 px-8 py-6">
+        <PeriodPicker />
         <KpiGrid />
         <Suspense
           fallback={
@@ -54,10 +48,6 @@ export default function App() {
           </div>
         </div>
         <RecentSalesCard />
-        <footer className="pb-2 text-center text-xs text-muted-foreground">
-          Периоды считаются в вашем часовом поясе ({USER_TIME_ZONE}). Выручка — за вычетом возвратов в дату
-          возврата.
-        </footer>
       </main>
     </div>
   )

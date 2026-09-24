@@ -67,4 +67,25 @@ public sealed class SalesDataGeneratorTests
         Assert.Contains(data.Managers, m => !lastWeek.Contains(m));
         Assert.Contains(data.Managers, m => !m.IsActive);
     }
+
+    [Fact]
+    public void Generate_ProducesRefundsOfDifferentGrades()
+    {
+        var refunded = new SalesDataGenerator().Generate(Now).Sales
+            .Where(s => s.Refund is not null)
+            .Select(s => (Sale: s, Refund: s.Refund!, Total: s.Items.Sum(i => i.UnitPrice * i.Quantity)))
+            .ToList();
+
+        // Сроки: от возврата в первые сутки до гарантийных через 1–3 месяца.
+        Assert.Contains(refunded, r => r.Refund.RefundedAt - r.Sale.SoldAt < TimeSpan.FromDays(1));
+        Assert.Contains(refunded, r => r.Refund.RefundedAt - r.Sale.SoldAt > TimeSpan.FromDays(30));
+        // Судьба товара и уровень доп. расходов: без расходов, с экспертизой, с 3+ видами расходов.
+        Assert.Contains(refunded, r => r.Refund.ItemsRestocked && r.Refund.Costs.Count == 0);
+        Assert.Contains(refunded, r => !r.Refund.ItemsRestocked);
+        Assert.Contains(refunded, r => r.Refund.Costs.Any(c => c.Type == RefundCostType.Inspection));
+        Assert.Contains(refunded, r => r.Refund.Costs.Count >= 3);
+        // Размер: мелкие возвраты и возврат крупной сделки.
+        Assert.Contains(refunded, r => r.Total < 50_000m);
+        Assert.Contains(refunded, r => r.Total > 10_000_000m);
+    }
 }

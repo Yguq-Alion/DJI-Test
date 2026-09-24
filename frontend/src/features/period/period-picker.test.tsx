@@ -4,7 +4,22 @@ import type { UrlUpdateEvent } from 'nuqs/adapters/testing'
 import { KpiGrid } from '@/features/kpi/kpi-grid'
 import { requests } from '@/test/server'
 import { renderWithProviders } from '@/test/render'
-import { PeriodPicker } from './period-picker'
+import { PeriodPicker, previewRange } from './period-picker'
+
+describe('предпросмотр диапазона в календаре', () => {
+  const d = (day: number) => new Date(2026, 8, day)
+
+  test('после первой даты подсвечивает до даты под курсором в любую сторону', () => {
+    expect(previewRange({ from: d(10), to: undefined }, d(15))).toEqual({ from: d(10), to: d(15) })
+    expect(previewRange({ from: d(10), to: undefined }, d(3))).toEqual({ from: d(3), to: d(10) })
+  })
+
+  test('без незавершённого выбора предпросмотра нет', () => {
+    expect(previewRange(undefined, d(15))).toBeUndefined()
+    expect(previewRange({ from: d(10), to: d(12) }, d(15))).toBeUndefined()
+    expect(previewRange({ from: d(10), to: undefined }, undefined)).toBeUndefined()
+  })
+})
 
 const kpiRequests = () => requests.filter((r) => r.pathname === '/api/dashboard/kpi')
 
@@ -34,6 +49,22 @@ describe('смена периода', () => {
     await waitFor(() => expect(kpiRequests().some((r) => r.searchParams.get('preset') === '7d')).toBe(true))
     expect(updates.at(-1)?.queryString).toContain('preset=7d')
     expect(screen.getByRole('radio', { name: '7 дней' })).toHaveAttribute('data-state', 'on')
+  })
+
+  test('календарь открывается с подсвеченными датами текущего периода, в т.ч. для пресета', async () => {
+    renderWithProviders(<PeriodPicker />)
+    // Даты пресета 30d берутся из ответа сервера (фикстура: 25 авг. – 23 сент.).
+    expect(await screen.findByText(/25 авг\. – 23 сентября/)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Произвольный период' }))
+
+    const selected = (await screen.findAllByRole('button', { name: /selected/ })).filter((b) =>
+      /2026/.test(b.getAttribute('aria-label') ?? ''),
+    )
+    const labels = selected.map((b) => b.getAttribute('aria-label'))
+    expect(labels.some((l) => l?.includes('25 августа'))).toBe(true)
+    expect(labels.some((l) => l?.includes('23 сентября'))).toBe(true)
+    expect(labels.some((l) => l?.includes('24 сентября'))).toBe(false)
   })
 
   test('произвольный период из URL передаётся как from/to', async () => {

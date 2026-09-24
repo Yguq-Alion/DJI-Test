@@ -53,6 +53,8 @@ export interface TimeseriesPoint {
   revenue: number
   grossProfit: number
   salesCount: number
+  refundsCount: number
+  refundedAmount: number
 }
 
 export interface TimeseriesResponse {
@@ -123,8 +125,15 @@ export interface RecentSale {
   refund: { refundedAt: string; itemsRestocked: boolean; reason: string | null; extraCosts: number } | null
 }
 
+export type SortDirection = 'asc' | 'desc'
+export type RecentSalesSort =
+  'soldAt' | 'manager' | 'customer' | 'items' | 'status' | 'amount' | 'grossProfit'
+
 export interface RecentSalesResponse {
   period: Period
   items: RecentSale[]
-  nextCursor: string | null
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
 }

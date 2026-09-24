@@ -1,13 +1,15 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { motion } from 'motion/react'
 import { parseAsStringLiteral, useQueryState } from 'nuqs'
+import { useMemo, useState } from 'react'
 import { useRanking } from '@/api/queries'
 import type { RankingItem, RankingSort } from '@/api/types'
 import { BlockCard, QueryState } from '@/components/dashboard/block-card'
 import { Delta } from '@/components/dashboard/delta'
 import { ManagerAvatar } from '@/components/dashboard/manager-avatar'
+import { nextSort, SortableHead, type SortState } from '@/components/dashboard/sortable-head'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePeriod } from '@/features/period/period-state'
 import { formatInteger, formatMoneyCompact, formatShare } from '@/lib/format'
@@ -22,19 +24,60 @@ export function useRankingSort() {
   )
 }
 
+type RankingColumn =
+  'rank' | 'manager' | 'salesCount' | 'revenue' | 'grossProfit' | 'averageCheck' | 'margin' | 'change'
+
+const DEFAULT_SORT: SortState<RankingColumn> = { key: 'rank', dir: 'asc' }
+
+const columnValue: Record<RankingColumn, (item: RankingItem) => number | string | null> = {
+  rank: (i) => i.rank,
+  manager: (i) => i.manager.fullName,
+  salesCount: (i) => i.salesCount,
+  revenue: (i) => i.revenue,
+  grossProfit: (i) => i.grossProfit,
+  averageCheck: (i) => i.averageCheck,
+  margin: (i) => i.margin,
+  change: (i) => i.change,
+}
+
+/**
+ * Пересортировка уже посчитанного сервером рейтинга (десятки строк) по выбранной колонке.
+ * Пустые значения (нет продаж, нет базы для сравнения) всегда внизу.
+ */
+function sortItems(items: RankingItem[], sort: SortState<RankingColumn>): RankingItem[] {
+  const value = columnValue[sort.key]
+  const sign = sort.dir === 'asc' ? 1 : -1
+  return [...items].sort((a, b) => {
+    const x = value(a)
+    const y = value(b)
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1
+    const diff = typeof x === 'string' ? x.localeCompare(String(y), 'ru') : x - Number(y)
+    return diff * sign
+  })
+}
+
 export function RankingCard({ className }: { className?: string }) {
   const { params } = usePeriod()
   const [sortBy, setSortBy] = useRankingSort()
   const query = useRanking(params, sortBy)
-  const items = query.data?.items ?? []
+  const [sort, setSort] = useState(DEFAULT_SORT)
+  const items = useMemo(() => sortItems(query.data?.items ?? [], sort), [query.data, sort])
+  const onSort = (column: RankingColumn) =>
+    setSort((s) => nextSort(s, column, column === 'rank' || column === 'manager' ? 'asc' : 'desc'))
 
   return (
     <BlockCard
       title="Рейтинг менеджеров"
-      description="Место, изменение метрики и позиции к прошлому периоду"
+      hint="Место в рейтинге считается по выбранной метрике (валовая прибыль или средний чек). Стрелка у места — сдвиг позиции, «Изменение» — рост метрики к предыдущему периоду той же длины. Клик по заголовку колонки меняет сортировку таблицы."
       className={className}
       action={
-        <Tabs value={sortBy} onValueChange={(value) => void setSortBy(value as RankingSort)}>
+        <Tabs
+          value={sortBy}
+          onValueChange={(value) => {
+            void setSortBy(value as RankingSort)
+            setSort(DEFAULT_SORT)
+          }}
+        >
           <TabsList aria-label="Ранжировать по">
             <TabsTrigger value="grossProfit">Валовая прибыль</TabsTrigger>
             <TabsTrigger value="averageCheck">Средний чек</TabsTrigger>
@@ -56,14 +99,30 @@ export function RankingCard({ className }: { className?: string }) {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead>Менеджер</TableHead>
-                <TableHead className="text-right">Продажи</TableHead>
-                <TableHead className="text-right">Выручка</TableHead>
-                <SortableHead active={sortBy === 'grossProfit'}>Валовая прибыль</SortableHead>
-                <SortableHead active={sortBy === 'averageCheck'}>Средний чек</SortableHead>
-                <TableHead className="text-right">Маржа</TableHead>
-                <TableHead className="w-24 text-right">Изменение</TableHead>
+                <SortableHead column="rank" sort={sort} onSort={onSort} className="w-14">
+                  #
+                </SortableHead>
+                <SortableHead column="manager" sort={sort} onSort={onSort}>
+                  Менеджер
+                </SortableHead>
+                <SortableHead column="salesCount" sort={sort} onSort={onSort} align="right">
+                  Продажи
+                </SortableHead>
+                <SortableHead column="revenue" sort={sort} onSort={onSort} align="right">
+                  Выручка
+                </SortableHead>
+                <SortableHead column="grossProfit" sort={sort} onSort={onSort} align="right">
+                  Валовая прибыль
+                </SortableHead>
+                <SortableHead column="averageCheck" sort={sort} onSort={onSort} align="right">
+                  Средний чек
+                </SortableHead>
+                <SortableHead column="margin" sort={sort} onSort={onSort} align="right">
+                  Маржа
+                </SortableHead>
+                <SortableHead column="change" sort={sort} onSort={onSort} align="right" className="w-28">
+                  Изменение
+                </SortableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -75,17 +134,6 @@ export function RankingCard({ className }: { className?: string }) {
         </div>
       </QueryState>
     </BlockCard>
-  )
-}
-
-function SortableHead({ active, children }: { active: boolean; children: string }) {
-  return (
-    <TableHead
-      className={cn('text-right', active && 'font-semibold text-foreground')}
-      aria-sort={active ? 'descending' : undefined}
-    >
-      {children}
-    </TableHead>
   )
 }
 

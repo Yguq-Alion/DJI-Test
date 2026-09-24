@@ -44,7 +44,7 @@ public sealed class TimeseriesQuery : PeriodQuery
     public string Granularity { get; set; } = "auto";
 }
 
-public sealed record TimeseriesPoint(DateTime BucketStart, decimal Revenue, decimal GrossProfit, int SalesCount);
+public sealed record TimeseriesPoint(DateTime BucketStart, decimal Revenue, decimal GrossProfit, int SalesCount, int RefundsCount, decimal RefundedAmount);
 
 public sealed record TimeseriesResponse(PeriodDto Period, Granularity Granularity, IReadOnlyList<TimeseriesPoint> Points);
 

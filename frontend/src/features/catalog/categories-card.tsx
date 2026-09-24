@@ -13,7 +13,11 @@ export function CategoriesCard({ className }: { className?: string }) {
   const maxRevenue = Math.max(0, ...items.map((i) => i.revenue))
 
   return (
-    <BlockCard title="Категории" description="Выручка, доля и маржа" className={className}>
+    <BlockCard
+      title="Категории"
+      hint="Чистая выручка категории (за вычетом возвратов в дату возврата), её доля в общей выручке и маржа — валовая прибыль / выручка."
+      className={className}
+    >
       <QueryState
         isPending={query.isPending}
         isError={query.isError}
