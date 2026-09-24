@@ -4,6 +4,9 @@ obj/
 *.user
 .vs/
 TestResults/
+*.trx
+*.coverage
+*.coveragexml
 
 # Node / frontend
 node_modules/
@@ -11,14 +14,26 @@ dist/
 coverage/
 playwright-report/
 test-results/
+blob-report/
+playwright/.cache/
 *.tsbuildinfo
+*.log
 
 # Env & secrets
 .env
 .env.*
 !.env.example
 *.pfx
+*.p12
+*.pem
+*.key
 client_secret*.json
+secrets.json
+appsettings.*.local.json
+# Токены реестров и git-учётки (npm/GitHub PAT)
+.npmrc
+.git-credentials
+*.token
 
 # Claude Code (личные настройки)
 .claude/settings.local.json
